@@ -28,6 +28,10 @@ async def main():
 
     bot = commands.Bot(command_prefix=BOT_PREFIX, intents=INTENTS)
 
+    # Load the matchmaking cog BEFORE connecting so it's ready on first on_ready
+    await bot.load_extension("matchmaking_cog")
+    logger.info("Loaded matchmaking_cog extension")
+
     @bot.event
     async def on_ready():
         logger.info("=" * 60)
@@ -36,7 +40,7 @@ async def main():
         for g in bot.guilds:
             logger.info("  - Guild: '%s' (ID: %s)", g.name, g.id)
 
-        # Force sync to the specific guild we care about
+        # Force sync to the specific guild for instant availability
         guild = bot.get_guild(MATCHMAKING_GUILD_ID)
         if guild:
             try:
@@ -55,10 +59,16 @@ async def main():
         except Exception as e:
             logger.error("Failed global sync: %s", e)
 
-        logger.info("=" * 60)
+        # Post initial status message
+        try:
+            cog = bot.get_cog("Matchmaking")
+            if cog:
+                await cog._post_status_update()
+                logger.info("Posted initial matchmaking status")
+        except Exception as e:
+            logger.error("Failed to post initial status: %s", e)
 
-    # Load the matchmaking cog BEFORE starting
-    await bot.load_extension("matchmaking_cog")
+        logger.info("=" * 60)
 
     async with bot:
         await bot.start(token)
