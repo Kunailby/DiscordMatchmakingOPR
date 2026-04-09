@@ -55,7 +55,7 @@ class TestStorageInitialization:
         with open(tmp_json, "w") as f:
             json.dump([1, 2, 3], f)
         storage = MatchmakingStorage(filepath=str(tmp_json))
-        assert storage.data == {"queue": [], "matches": []}
+        assert storage.data == {"queue": [], "matches": [], "pending_challenges": []}
 
 
 class TestQueueOperations:
@@ -165,7 +165,7 @@ class TestReset:
 
         with open(tmp_json, "r") as f:
             loaded = json.load(f)
-        assert loaded == {"queue": [], "matches": []}
+        assert loaded == {"queue": [], "matches": [], "pending_challenges": []}
 
 
 class TestFindOpponent:

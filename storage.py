@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DATA = {
     "queue": [],
-    "matches": []
+    "matches": [],
+    "pending_challenges": []
 }
 
 
@@ -48,6 +49,9 @@ class MatchmakingStorage:
                 raise ValueError("'queue' and 'matches' must be lists")
 
             self.data = loaded
+            # Backfill missing keys from older saves
+            if "pending_challenges" not in self.data:
+                self.data["pending_challenges"] = []
             logger.info(f"Loaded storage from {self.filepath}")
 
         except (json.JSONDecodeError, ValueError, OSError) as e:
@@ -70,6 +74,55 @@ class MatchmakingStorage:
     @property
     def matches(self) -> list[dict[str, Any]]:
         return self.data["matches"]
+
+    @property
+    def pending_challenges(self) -> list[dict[str, Any]]:
+        return self.data["pending_challenges"]
+
+    def add_pending_challenge(
+        self, challenger_id: int, challenger_name: str,
+        target_id: int, target_name: str, system: str, points: str,
+    ) -> None:
+        """Record a pending rival challenge."""
+        self.pending_challenges.append({
+            "challenger_id": challenger_id,
+            "challenger_name": challenger_name,
+            "target_id": target_id,
+            "target_name": target_name,
+            "system": system,
+            "points": points,
+        })
+        self._save_data()
+
+    def remove_pending_challenge(self, target_id: int) -> bool:
+        """Remove a pending challenge by target user_id. Returns True if removed."""
+        before = len(self.pending_challenges)
+        self.data["pending_challenges"] = [
+            c for c in self.pending_challenges if c["target_id"] != target_id
+        ]
+        if len(self.pending_challenges) < before:
+            self._save_data()
+            return True
+        return False
+
+    def find_pending_challenge_by_challenger(self, challenger_id: int) -> dict[str, Any] | None:
+        """Find a pending challenge where the given user is the challenger."""
+        for c in self.pending_challenges:
+            if c["challenger_id"] == challenger_id:
+                return c
+        return None
+
+    def find_pending_challenge_by_target(self, target_id: int) -> dict[str, Any] | None:
+        """Find a pending challenge where the given user is the target."""
+        for c in self.pending_challenges:
+            if c["target_id"] == target_id:
+                return c
+        return None
+
+    def is_pending_challenge(self, user_id: int) -> bool:
+        """Check if a user has a pending challenge (as challenger or target)."""
+        return (self.find_pending_challenge_by_challenger(user_id) is not None
+                or self.find_pending_challenge_by_target(user_id) is not None)
 
     def add_to_queue(self, user_id: int, username: str, system: str, points: str) -> None:
         """Add a user to the matchmaking queue."""

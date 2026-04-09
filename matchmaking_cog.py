@@ -97,6 +97,7 @@ class Matchmaking(commands.Cog):
             app_commands.Choice(name="Rival", value="rival"),
             app_commands.Choice(name="Status", value="status"),
             app_commands.Choice(name="Leave", value="leave"),
+            app_commands.Choice(name="Cancel", value="cancel"),
         ],
         system=[
             app_commands.Choice(name="AOF", value="AOF"),
@@ -130,6 +131,8 @@ class Matchmaking(commands.Cog):
             await self._handle_status(interaction)
         elif action == "leave":
             await self._handle_leave(interaction, leave_target)
+        elif action == "cancel":
+            await self._handle_cancel(interaction)
 
     # ------------------------------------------------------------------
     # /matchmaking_any — queue with ANY system/points, auto-match to first waiting player
@@ -232,6 +235,13 @@ class Matchmaking(commands.Cog):
                 )
                 return
 
+            if self.storage.find_pending_challenge_by_challenger(user_id):
+                await interaction.response.send_message(
+                    "⚠️ You have a pending rival challenge. Cancel it first with **/matchmaking Cancel**.",
+                    ephemeral=True,
+                )
+                return
+
             opponent = self.storage.find_compatible_opponent(user_id, system, points)
             if opponent:
                 self.storage.remove_from_queue_by_entry(opponent)
@@ -282,11 +292,11 @@ class Matchmaking(commands.Cog):
         else:
             embed.add_field(name="Waiting in Queue", value="No players waiting.", inline=False)
 
-        if self._active_challenges:
+        if self.storage.pending_challenges:
             challenge_lines = []
-            for c in self._active_challenges.values():
+            for c in self.storage.pending_challenges:
                 challenge_lines.append(
-                    f"⚔️ **{c.challenger_name}** waiting for **{c.target_name}** to accept ({c.system}, {c.points} pts)"
+                    f"⚔️ **{c['challenger_name']}** waiting for **{c['target_name']}** to accept ({c['system']}, {c['points']} pts)"
                 )
             embed.add_field(name="Pending Challenges", value="\n".join(challenge_lines), inline=False)
 
@@ -349,6 +359,52 @@ class Matchmaking(commands.Cog):
                     )
 
     # ------------------------------------------------------------------
+    # Cancel challenge handler
+    # ------------------------------------------------------------------
+
+    async def _handle_cancel(self, interaction: discord.Interaction):
+        """Cancel a pending rival challenge (challenger only)."""
+        user_id = interaction.user.id
+        challenge = self.storage.find_pending_challenge_by_challenger(user_id)
+
+        if challenge is None:
+            await interaction.response.send_message(
+                "⚠️ You don't have any pending challenges to cancel.", ephemeral=True
+            )
+            return
+
+        self.storage.remove_pending_challenge(challenge["target_id"])
+
+        # Disable buttons on the original message if we still have it cached
+        for msg_id, ch in list(self._active_challenges.items()):
+            if ch.challenger_id == user_id:
+                self._active_challenges.pop(msg_id, None)
+                try:
+                    channel = interaction.channel or interaction.message.channel if interaction.message else None
+                    if channel:
+                        msg = await channel.fetch_message(msg_id)
+                        for child in msg.components[0].children:
+                            child.disabled = True
+                        await msg.edit(view=View())
+                except Exception:
+                    pass
+
+        # DM the target to let them know
+        try:
+            target_user = interaction.guild.get_member(challenge["target_id"])
+            if target_user is None:
+                target_user = await interaction.guild.fetch_member(challenge["target_id"])
+            await target_user.send(
+                f"❌ **{challenge['challenger_name']}** has cancelled their challenge to you."
+            )
+        except (discord.Forbidden, discord.NotFound):
+            pass
+
+        await interaction.response.send_message(
+            f"🚫 Challenge to **{challenge['target_name']}** has been cancelled.", ephemeral=False
+        )
+
+    # ------------------------------------------------------------------
     # Rival challenge handler
     # ------------------------------------------------------------------
 
@@ -392,6 +448,20 @@ class Matchmaking(commands.Cog):
             )
             return
 
+        if self.storage.find_pending_challenge_by_challenger(challenger.id):
+            await interaction.response.send_message(
+                "⚠️ You already have a pending challenge. Cancel it first with **/matchmaking Cancel**.",
+                ephemeral=True,
+            )
+            return
+
+        if self.storage.find_pending_challenge_by_target(opponent.id):
+            await interaction.response.send_message(
+                f"⚠️ **{opponent.display_name}** already has a pending challenge. They must resolve it first.",
+                ephemeral=True,
+            )
+            return
+
         challenge = RivalChallenge(challenger, opponent, system, points)
         view = RivalChallengeView(challenge, self)
 
@@ -432,7 +502,12 @@ class Matchmaking(commands.Cog):
         except Exception as e:
             logger.error("Unexpected error DMing %s: %s", opponent, e)
 
-        # Store challenge by message id
+        # Store challenge by message id (runtime cache) and persist to storage
+        self.storage.add_pending_challenge(
+            challenge.challenger_id, challenge.challenger_name,
+            challenge.target_id, challenge.target_name,
+            challenge.system, challenge.points,
+        )
         msg = await interaction.original_response()
         self._active_challenges[msg.id] = challenge
 
@@ -464,6 +539,7 @@ class Matchmaking(commands.Cog):
                 )
                 return
 
+            self.storage.remove_pending_challenge(target_id)
             self.storage.add_match(
                 {"user_id": challenger_id, "username": challenge.challenger_name, "system": challenge.system, "points": challenge.points},
                 {"user_id": target_id, "username": challenge.target_name, "system": challenge.system, "points": challenge.points},
@@ -489,6 +565,7 @@ class Matchmaking(commands.Cog):
 
     async def _handle_rival_decline(self, challenge: RivalChallenge, interaction: discord.Interaction):
         """Decline a rival challenge."""
+        self.storage.remove_pending_challenge(challenge.target_id)
         await interaction.response.send_message(
             f"❌ **{challenge.target_name}** declined the challenge.", ephemeral=False
         )
