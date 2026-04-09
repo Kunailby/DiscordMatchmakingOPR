@@ -26,6 +26,49 @@ class RivalChallenge:
         self.points = points
 
 
+class RivalChallengeView(View):
+    """Interactive Accept/Decline buttons for a rival challenge. Stays up indefinitely."""
+
+    def __init__(self, challenge: RivalChallenge, cog: "Matchmaking"):
+        super().__init__(timeout=None)
+        self.challenge = challenge
+        self.cog = cog
+        self._responded = False
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.challenge.target_id:
+            await interaction.response.send_message(
+                "⚠️ Only the challenged player can respond.", ephemeral=True
+            )
+            return False
+        if self._responded:
+            await interaction.response.send_message(
+                "⚠️ This challenge has already been resolved.", ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="✅ Accept", style=discord.ButtonStyle.success)
+    async def accept_button(self, interaction: discord.Interaction, _button: Button):
+        self._responded = True
+        self.stop()
+        self.cog._active_challenges.pop(interaction.message.id, None)
+        for child in self.children:
+            child.disabled = True
+        await interaction.message.edit(view=self)
+        await self.cog._handle_rival_accept(self.challenge, interaction)
+
+    @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
+    async def decline_button(self, interaction: discord.Interaction, _button: Button):
+        self._responded = True
+        self.stop()
+        self.cog._active_challenges.pop(interaction.message.id, None)
+        for child in self.children:
+            child.disabled = True
+        await interaction.message.edit(view=self)
+        await self.cog._handle_rival_decline(self.challenge, interaction)
+
+
 class Matchmaking(commands.Cog):
     """Cog handling matchmaking slash commands."""
 
@@ -33,14 +76,14 @@ class Matchmaking(commands.Cog):
         self.bot = bot
         self.storage = MatchmakingStorage()
         self._queue_lock = asyncio.Lock()
-        self._active_challenges: dict[int, RivalChallenge] = {}  # message_id -> challenge
+        self._active_challenges: dict[int, RivalChallenge] = {}
         self.auto_reset.start()
 
     # ------------------------------------------------------------------
     # /matchmaking command
     # ------------------------------------------------------------------
 
-    @app_commands.command(name="matchmaking", description="Join, rival, show, or leave matchmaking.")
+    @app_commands.command(name="matchmaking", description="Join, rival, status, or leave matchmaking.")
     @app_commands.describe(
         action="Action to perform",
         system="Your system choice (required for Join/Rival)",
@@ -52,7 +95,7 @@ class Matchmaking(commands.Cog):
         action=[
             app_commands.Choice(name="Join", value="join"),
             app_commands.Choice(name="Rival", value="rival"),
-            app_commands.Choice(name="Show", value="show"),
+            app_commands.Choice(name="Status", value="status"),
             app_commands.Choice(name="Leave", value="leave"),
         ],
         system=[
@@ -83,10 +126,56 @@ class Matchmaking(commands.Cog):
             await self._handle_join(interaction, system, points)
         elif action == "rival":
             await self._handle_rival(interaction, opponent, system, points)
-        elif action == "show":
-            await self._handle_show(interaction)
+        elif action == "status":
+            await self._handle_status(interaction)
         elif action == "leave":
             await self._handle_leave(interaction, leave_target)
+
+    # ------------------------------------------------------------------
+    # /matchmaking_any — queue with ANY system/points, auto-match to first waiting player
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="matchmaking_any", description="Queue for any system/points — match with whoever is waiting first.")
+    async def matchmaking_any(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        username = interaction.user.display_name
+
+        async with self._queue_lock:
+            if self.storage.is_in_queue(user_id):
+                await interaction.response.send_message(
+                    "⚠️ You are already in the matchmaking queue.", ephemeral=True
+                )
+                return
+
+            if self.storage.is_in_match(user_id):
+                await interaction.response.send_message(
+                    "⚠️ You are already in a confirmed match. You cannot join the queue.",
+                    ephemeral=True,
+                )
+                return
+
+            # Match with the first person in the queue, adopting their settings
+            if self.storage.queue:
+                opponent = self.storage.queue.pop(0)
+                opp_system = opponent.get("system", "?")
+                opp_points = opponent.get("points", "?")
+
+                self.storage.add_match(
+                    opponent,
+                    {"user_id": user_id, "username": username, "system": opp_system, "points": opp_points},
+                )
+
+                opponent_mention = f"<@{opponent['user_id']}>"
+                await interaction.response.send_message(
+                    f"⚔️ **MATCH FOUND!** {opponent_mention} vs {interaction.user.mention}!\n"
+                    f"System: **{opp_system}** • Points: **{opp_points}**\n"
+                    f"*(matched using their settings via **Any**)*"
+                )
+            else:
+                self.storage.add_to_queue(user_id, username, "ANY", "ANY")
+                await interaction.response.send_message(
+                    f"🕰️ {interaction.user.mention} has joined the queue as **ANY** (any system, any points). Waiting for an opponent…"
+                )
 
     # ------------------------------------------------------------------
     # /matchmaking reset  (admin only)
@@ -143,7 +232,6 @@ class Matchmaking(commands.Cog):
                 )
                 return
 
-            # Look for a compatible opponent (same system + points)
             opponent = self.storage.find_compatible_opponent(user_id, system, points)
             if opponent:
                 self.storage.remove_from_queue_by_entry(opponent)
@@ -163,14 +251,13 @@ class Matchmaking(commands.Cog):
                     f"🕰️ {interaction.user.mention} has joined the queue with system **{system}** ({points} pts). Waiting for an opponent…"
                 )
 
-    async def _handle_show(self, interaction: discord.Interaction):
+    async def _handle_status(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="📋 Matchmaking Status",
             colour=discord.Colour.blurple(),
             timestamp=datetime.now(timezone.utc),
         )
 
-        # Active matches
         if self.storage.matches:
             match_lines = []
             for m in self.storage.matches:
@@ -185,7 +272,6 @@ class Matchmaking(commands.Cog):
         else:
             embed.add_field(name="Active Matches", value="No active matches.", inline=False)
 
-        # Waiting players
         if self.storage.queue:
             wait_lines = []
             for p in self.storage.queue:
@@ -233,9 +319,26 @@ class Matchmaking(commands.Cog):
                     )
                     return
                 self.storage.remove_match(match_entry)
-                await interaction.response.send_message(
-                    "👋 You have been removed from your confirmed match.", ephemeral=True
-                )
+
+                # Find the other player and ping them
+                other = None
+                p1 = match_entry.get("player1", {})
+                p2 = match_entry.get("player2", {})
+                if p1.get("user_id") == user_id:
+                    other = p2
+                elif p2.get("user_id") == user_id:
+                    other = p1
+
+                if other and other.get("user_id"):
+                    opp_id = other["user_id"]
+                    await interaction.response.send_message(
+                        f"<@{opp_id}> — **{other.get('username', 'Opponent')}**, your opponent has left the match.\n"
+                        f"👋 {interaction.user.mention} has been removed from their confirmed match."
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"👋 {interaction.user.mention} has been removed from their confirmed match."
+                    )
 
     # ------------------------------------------------------------------
     # Rival challenge handler
@@ -281,7 +384,6 @@ class Matchmaking(commands.Cog):
             )
             return
 
-        # Send challenge message with Accept/Decline buttons
         challenge = RivalChallenge(challenger, opponent, system, points)
         view = RivalChallengeView(challenge, self)
 
@@ -318,12 +420,12 @@ class Matchmaking(commands.Cog):
         except (discord.Forbidden, discord.NotFound):
             pass
 
-        # Store challenge by message id so button callbacks can find it
+        # Store challenge by message id
         msg = await interaction.original_response()
         self._active_challenges[msg.id] = challenge
 
     # ------------------------------------------------------------------
-    # Rival button callback handlers (called by the view)
+    # Rival button callback handlers
     # ------------------------------------------------------------------
 
     async def _handle_rival_accept(self, challenge: RivalChallenge, interaction: discord.Interaction):
@@ -332,15 +434,11 @@ class Matchmaking(commands.Cog):
             target_id = interaction.user.id
             challenger_id = challenge.challenger_id
 
-            # If the target was in the queue, remove them
             if self.storage.is_in_queue(target_id):
                 self.storage.remove_from_queue(target_id)
-
-            # If the challenger was in the queue, remove them
             if self.storage.is_in_queue(challenger_id):
                 self.storage.remove_from_queue(challenger_id)
 
-            # Check if either is already in a match
             if self.storage.is_in_match(target_id):
                 await interaction.response.send_message(
                     "❌ You are already in a confirmed match and cannot accept this challenge.",
@@ -354,20 +452,18 @@ class Matchmaking(commands.Cog):
                 )
                 return
 
-            # Create the match
             self.storage.add_match(
                 {"user_id": challenger_id, "username": challenge.challenger_name, "system": challenge.system, "points": challenge.points},
                 {"user_id": target_id, "username": challenge.target_name, "system": challenge.system, "points": challenge.points},
             )
 
-        # Announce the match
         await interaction.response.send_message(
             f"✅ **{challenge.target_name}** accepted the challenge!\n"
             f"⚔️ **MATCH CONFIRMED!** <@{challenger_id}> vs {interaction.user.mention}!\n"
             f"System: **{challenge.system}** • Points: **{challenge.points}**"
         )
 
-        # Notify challenger
+        # Notify challenger via DM
         try:
             challenger_user = interaction.guild.get_member(challenger_id) or await interaction.guild.fetch_member(challenger_id)
             await challenger_user.send(
@@ -383,7 +479,7 @@ class Matchmaking(commands.Cog):
             f"❌ **{challenge.target_name}** declined the challenge.", ephemeral=False
         )
 
-        # Notify challenger
+        # Notify challenger via DM
         try:
             challenger_user = interaction.guild.get_member(challenge.challenger_id) or await interaction.guild.fetch_member(challenge.challenger_id)
             await challenger_user.send(
@@ -400,12 +496,9 @@ class Matchmaking(commands.Cog):
     async def auto_reset(self):
         """Check hourly if today is the second Friday and reset if so."""
         now = datetime.now(timezone.utc)
-        # Only act on Fridays (weekday() == 4)
-        if now.weekday() != 4:
+        if now.weekday() != 4:  # Not Friday
             return
 
-        # Calculate which Friday of the month this is
-        # Week 1 = days 1-7, Week 2 = days 8-14, etc.
         week_number = (now.day - 1) // 7 + 1
 
         if week_number == 2:
@@ -419,7 +512,6 @@ class Matchmaking(commands.Cog):
             self.storage.data[last_reset_key] = now.strftime("%Y-%m-%d")
             self.storage._save_data()
 
-            # Announce in all guild channels if possible
             for guild in self.bot.guilds:
                 channel = guild.system_channel
                 if channel and channel.permissions_for(guild.me).send_messages:
@@ -434,53 +526,6 @@ class Matchmaking(commands.Cog):
     @auto_reset.before_loop
     async def before_auto_reset(self):
         await self.bot.wait_until_ready()
-
-
-class RivalChallengeView(View):
-    """Interactive Accept/Decline buttons for a rival challenge. Stays up indefinitely."""
-
-    def __init__(self, challenge: RivalChallenge, cog: "Matchmaking"):
-        super().__init__(timeout=None)  # no timeout — buttons persist until clicked
-        self.challenge = challenge
-        self.cog = cog
-        self._responded = False
-
-    async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.challenge.target_id:
-            await interaction.response.send_message(
-                "⚠️ Only the challenged player can respond.", ephemeral=True
-            )
-            return False
-        if self._responded:
-            await interaction.response.send_message(
-                "⚠️ This challenge has already been resolved.", ephemeral=True
-            )
-            return False
-        return True
-
-    @discord.ui.button(label="✅ Accept", style=discord.ButtonStyle.success, custom_id="rival_accept")
-    async def accept_button(self, interaction: discord.Interaction, _button: Button):
-        self._responded = True
-        self.stop()
-        # Clear challenge from lookup
-        self.cog._active_challenges.pop(interaction.message.id, None)
-        # Disable both buttons
-        for child in self.children:
-            child.disabled = True
-        await interaction.message.edit(view=self)
-        await self.cog._handle_rival_accept(self.challenge, interaction)
-
-    @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger, custom_id="rival_decline")
-    async def decline_button(self, interaction: discord.Interaction, _button: Button):
-        self._responded = True
-        self.stop()
-        # Clear challenge from lookup
-        self.cog._active_challenges.pop(interaction.message.id, None)
-        # Disable both buttons
-        for child in self.children:
-            child.disabled = True
-        await interaction.message.edit(view=self)
-        await self.cog._handle_rival_decline(self.challenge, interaction)
 
 
 async def setup(bot: commands.Bot) -> None:
