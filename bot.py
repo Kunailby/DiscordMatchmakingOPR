@@ -16,6 +16,9 @@ INTENTS.members = True
 
 BOT_PREFIX = "!"
 
+# The guild where our matchmaking server lives
+MATCHMAKING_GUILD_ID = 1196551644645695658
+
 
 async def main():
     token = os.getenv("DISCORD_TOKEN")
@@ -27,23 +30,34 @@ async def main():
 
     @bot.event
     async def on_ready():
-        logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
-        logger.info(f"Connected to {len(bot.guilds)} guild(s)")
-        try:
-            # Sync to each guild for instant command availability
-            for guild in bot.guilds:
-                try:
-                    synced = await bot.tree.sync(guild=guild)
-                    logger.info(f"Synced {len(synced)} command(s) to guild '{guild.name}'")
-                except Exception as e:
-                    logger.error(f"Failed to sync commands to guild '{guild.name}': {e}")
-            # Also keep a global sync as fallback
-            synced = await bot.tree.sync()
-            logger.info(f"Global synced {len(synced)} slash command(s)")
-        except Exception as e:
-            logger.error(f"Failed to sync slash commands: {e}")
+        logger.info("=" * 60)
+        logger.info("Logged in as %s (ID: %s)", bot.user, bot.user.id)
+        logger.info("Connected to %d guild(s)", len(bot.guilds))
+        for g in bot.guilds:
+            logger.info("  - Guild: '%s' (ID: %s)", g.name, g.id)
 
-    # Load the matchmaking cog
+        # Force sync to the specific guild we care about
+        guild = bot.get_guild(MATCHMAKING_GUILD_ID)
+        if guild:
+            try:
+                synced = await bot.tree.sync(guild=guild)
+                logger.info("Synced %d command(s) to guild '%s': %s",
+                            len(synced), guild.name, [c.name for c in synced])
+            except Exception as e:
+                logger.error("Failed to sync to guild '%s': %s", guild.name, e)
+        else:
+            logger.error("Bot is NOT in guild %d! Cannot sync commands.", MATCHMAKING_GUILD_ID)
+
+        # Global fallback sync
+        try:
+            synced = await bot.tree.sync()
+            logger.info("Global synced %d command(s)", len(synced))
+        except Exception as e:
+            logger.error("Failed global sync: %s", e)
+
+        logger.info("=" * 60)
+
+    # Load the matchmaking cog BEFORE starting
     await bot.load_extension("matchmaking_cog")
 
     async with bot:

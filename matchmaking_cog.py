@@ -129,14 +129,19 @@ class Matchmaking(commands.Cog):
 
     async def _post_status_update(self) -> None:
         """Delete the old status message and post a new one in the status channel."""
-        try:
-            channel = self.bot.get_channel(self.STATUS_CHANNEL_ID)
-            if channel is None:
+        channel = self.bot.get_channel(self.STATUS_CHANNEL_ID)
+        logger.info("_post_status_update: get_channel(%s) = %s", self.STATUS_CHANNEL_ID, channel)
+
+        if channel is None:
+            try:
                 channel = await self.bot.fetch_channel(self.STATUS_CHANNEL_ID)
-            logger.info("Posting status update to channel %s", channel)
-        except Exception as e:
-            logger.warning("Could not find status channel %s: %s", self.STATUS_CHANNEL_ID, e)
-            return
+                logger.info("_post_status_update: fetch_channel(%s) = %s", self.STATUS_CHANNEL_ID, channel)
+            except Exception as e:
+                logger.error("Could NOT find status channel %s: %s", self.STATUS_CHANNEL_ID, e)
+                # Debug: log what guilds the bot sees
+                for g in self.bot.guilds:
+                    logger.info("  Bot sees guild '%s' (ID: %s)", g.name, g.id)
+                return
 
         try:
             last_msg_id = self.storage.data.get("last_status_message_id")
