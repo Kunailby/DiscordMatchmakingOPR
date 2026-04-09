@@ -282,6 +282,14 @@ class Matchmaking(commands.Cog):
         else:
             embed.add_field(name="Waiting in Queue", value="No players waiting.", inline=False)
 
+        if self._active_challenges:
+            challenge_lines = []
+            for c in self._active_challenges.values():
+                challenge_lines.append(
+                    f"⚔️ **{c.challenger_name}** waiting for **{c.target_name}** to accept ({c.system}, {c.points} pts)"
+                )
+            embed.add_field(name="Pending Challenges", value="\n".join(challenge_lines), inline=False)
+
         await interaction.response.send_message(embed=embed)
 
     async def _handle_leave(
