@@ -31,7 +31,8 @@ class Matchmaking(commands.Cog):
     @app_commands.command(name="matchmaking", description="Join, show, or leave matchmaking.")
     @app_commands.describe(
         action="Action to perform",
-        system="Your system choice (required for Join)"
+        system="Your system choice (required for Join)",
+        points="Your points value (required for Join)"
     )
     @app_commands.choices(
         action=[
@@ -43,15 +44,22 @@ class Matchmaking(commands.Cog):
             app_commands.Choice(name="AOF", value="AOF"),
             app_commands.Choice(name="GDF", value="GDF"),
         ],
+        points=[
+            app_commands.Choice(name="1000", value="1000"),
+            app_commands.Choice(name="1500", value="1500"),
+            app_commands.Choice(name="2000", value="2000"),
+            app_commands.Choice(name="3000+", value="3000+"),
+        ],
     )
     async def matchmaking(
         self,
         interaction: discord.Interaction,
         action: str,
         system: app_commands.Choice[str] | None = None,
+        points: app_commands.Choice[str] | None = None,
     ):
         if action == "join":
-            await self._handle_join(interaction, system)
+            await self._handle_join(interaction, system, points)
         elif action == "show":
             await self._handle_show(interaction)
         elif action == "leave":
@@ -79,15 +87,22 @@ class Matchmaking(commands.Cog):
         self,
         interaction: discord.Interaction,
         system_choice: app_commands.Choice[str] | None,
+        points_choice: app_commands.Choice[str] | None,
     ):
-        if system_choice is None:
+        if system_choice is None or points_choice is None:
+            missing = []
+            if system_choice is None:
+                missing.append("system")
+            if points_choice is None:
+                missing.append("points")
             await interaction.response.send_message(
-                "⚠️ You must specify a system (`AOF` or `GDF`) when joining.",
+                f"⚠️ You must specify **{', '.join(missing)}** when joining.",
                 ephemeral=True,
             )
             return
 
         system = system_choice.value
+        points = points_choice.value
         user_id = interaction.user.id
         username = interaction.user.display_name
 
@@ -105,22 +120,24 @@ class Matchmaking(commands.Cog):
                 )
                 return
 
-            # Check if there is someone waiting to pair with
-            if self.storage.queue:
-                opponent = self.storage.queue.pop(0)
+            # Look for a compatible opponent (same system + points)
+            opponent = self.storage.find_compatible_opponent(user_id, system, points)
+            if opponent:
+                self.storage.remove_from_queue_by_entry(opponent)
                 self.storage.add_match(
                     opponent,
-                    {"user_id": user_id, "username": username, "system": system},
+                    {"user_id": user_id, "username": username, "system": system, "points": points},
                 )
 
                 opponent_mention = f"<@{opponent['user_id']}>"
                 await interaction.response.send_message(
-                    f"⚔️ **MATCH FOUND!** {opponent_mention} vs {interaction.user.mention}!"
+                    f"⚔️ **MATCH FOUND!** {opponent_mention} vs {interaction.user.mention}!\n"
+                    f"System: **{system}** • Points: **{points}**"
                 )
             else:
-                self.storage.add_to_queue(user_id, username, system)
+                self.storage.add_to_queue(user_id, username, system, points)
                 await interaction.response.send_message(
-                    f"🕰️ {interaction.user.mention} has joined the queue with system **{system}**. Waiting for an opponent…"
+                    f"🕰️ {interaction.user.mention} has joined the queue with system **{system}** ({points} pts). Waiting for an opponent…"
                 )
 
     async def _handle_show(self, interaction: discord.Interaction):
@@ -138,7 +155,9 @@ class Matchmaking(commands.Cog):
                 p2 = m["player2"]["username"]
                 s1 = m["player1"]["system"]
                 s2 = m["player2"]["system"]
-                match_lines.append(f"⚔️ **{p1}** ({s1}) vs **{p2}** ({s2})")
+                pt1 = m["player1"].get("points", "?")
+                pt2 = m["player2"].get("points", "?")
+                match_lines.append(f"⚔️ **{p1}** ({s1}, {pt1} pts) vs **{p2}** ({s2}, {pt2} pts)")
             embed.add_field(name="Active Matches", value="\n".join(match_lines), inline=False)
         else:
             embed.add_field(name="Active Matches", value="No active matches.", inline=False)
@@ -147,7 +166,9 @@ class Matchmaking(commands.Cog):
         if self.storage.queue:
             wait_lines = []
             for p in self.storage.queue:
-                wait_lines.append(f"🕰️ **{p['username']}** ({p['system']}): WAITING OPPONENT")
+                wait_lines.append(
+                    f"🕰️ **{p['username']}** ({p['system']}, {p.get('points', '?')} pts): WAITING OPPONENT"
+                )
             embed.add_field(name="Waiting in Queue", value="\n".join(wait_lines), inline=False)
         else:
             embed.add_field(name="Waiting in Queue", value="No players waiting.", inline=False)

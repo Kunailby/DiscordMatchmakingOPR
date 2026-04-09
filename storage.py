@@ -71,13 +71,29 @@ class MatchmakingStorage:
     def matches(self) -> list[dict[str, Any]]:
         return self.data["matches"]
 
-    def add_to_queue(self, user_id: int, username: str, system: str) -> None:
+    def add_to_queue(self, user_id: int, username: str, system: str, points: str) -> None:
         """Add a user to the matchmaking queue."""
         self.queue.append({
             "user_id": user_id,
             "username": username,
-            "system": system
+            "system": system,
+            "points": points,
         })
+        self._save_data()
+
+    def find_compatible_opponent(self, user_id: int, system: str, points: str) -> dict[str, Any] | None:
+        """Find the first waiting player with matching system and points.
+        Returns the opponent entry or None if no match found."""
+        for entry in self.queue:
+            if (entry["user_id"] != user_id
+                    and entry.get("system") == system
+                    and entry.get("points") == points):
+                return entry
+        return None
+
+    def remove_from_queue_by_entry(self, entry: dict[str, Any]) -> None:
+        """Remove a specific entry from the queue (used when matching a player out)."""
+        self.data["queue"] = [p for p in self.queue if p["user_id"] != entry["user_id"]]
         self._save_data()
 
     def remove_from_queue(self, user_id: int) -> bool:
