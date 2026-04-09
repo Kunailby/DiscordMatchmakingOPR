@@ -147,6 +147,8 @@ class Matchmaking(commands.Cog):
                     pass  # Already deleted
                 except Exception:
                     pass  # Ignore permission errors etc.
+        except Exception:
+            pass
 
         embed = self._build_status_embed()
         new_msg = await channel.send(embed=embed)
