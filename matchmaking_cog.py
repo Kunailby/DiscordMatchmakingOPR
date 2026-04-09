@@ -55,8 +55,8 @@ class RivalChallengeView(View):
         self.cog._active_challenges.pop(interaction.message.id, None)
         for child in self.children:
             child.disabled = True
-        await interaction.message.edit(view=self)
         await self.cog._handle_rival_accept(self.challenge, interaction)
+        await interaction.message.edit(view=self)
 
     @discord.ui.button(label="❌ Decline", style=discord.ButtonStyle.danger)
     async def decline_button(self, interaction: discord.Interaction, _button: Button):
@@ -65,8 +65,8 @@ class RivalChallengeView(View):
         self.cog._active_challenges.pop(interaction.message.id, None)
         for child in self.children:
             child.disabled = True
-        await interaction.message.edit(view=self)
         await self.cog._handle_rival_decline(self.challenge, interaction)
+        await interaction.message.edit(view=self)
 
 
 class Matchmaking(commands.Cog):
@@ -417,8 +417,12 @@ class Matchmaking(commands.Cog):
                 colour=discord.Colour.orange(),
             )
             await opponent.send(embed=dm_embed)
-        except (discord.Forbidden, discord.NotFound):
-            pass
+        except discord.Forbidden:
+            logger.warning("Could not DM %s (DMs closed or bot cannot reach user)", opponent)
+        except discord.NotFound:
+            logger.warning("Could not DM %s (user not found)", opponent)
+        except Exception as e:
+            logger.error("Unexpected error DMing %s: %s", opponent, e)
 
         # Store challenge by message id
         msg = await interaction.original_response()
@@ -470,8 +474,10 @@ class Matchmaking(commands.Cog):
                 f"✅ Your rival challenge has been **accepted** by **{challenge.target_name}**!\n"
                 f"System: **{challenge.system}** • Points: **{challenge.points}**"
             )
-        except (discord.Forbidden, discord.NotFound):
-            pass
+        except discord.Forbidden:
+            logger.warning("Could not DM challenger (DMs closed)")
+        except (discord.NotFound, Exception) as e:
+            logger.warning("Could not DM challenger: %s", e)
 
     async def _handle_rival_decline(self, challenge: RivalChallenge, interaction: discord.Interaction):
         """Decline a rival challenge."""
@@ -485,8 +491,10 @@ class Matchmaking(commands.Cog):
             await challenger_user.send(
                 f"❌ Your rival challenge to **{challenge.target_name}** was **declined**."
             )
-        except (discord.Forbidden, discord.NotFound):
-            pass
+        except discord.Forbidden:
+            logger.warning("Could not DM challenger (DMs closed)")
+        except (discord.NotFound, Exception) as e:
+            logger.warning("Could not DM challenger: %s", e)
 
     # ------------------------------------------------------------------
     # Scheduled auto-reset — second Friday of every month

@@ -12,6 +12,7 @@ logger = logging.getLogger("opr_matchmaking")
 INTENTS = discord.Intents.default()
 INTENTS.message_content = True
 INTENTS.guilds = True
+INTENTS.members = True
 
 BOT_PREFIX = "!"
 
