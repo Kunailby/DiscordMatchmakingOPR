@@ -133,8 +133,9 @@ class Matchmaking(commands.Cog):
             channel = self.bot.get_channel(self.STATUS_CHANNEL_ID)
             if channel is None:
                 channel = await self.bot.fetch_channel(self.STATUS_CHANNEL_ID)
-        except Exception:
-            logger.warning("Could not find status channel %s", self.STATUS_CHANNEL_ID)
+            logger.info("Posting status update to channel %s", channel)
+        except Exception as e:
+            logger.warning("Could not find status channel %s: %s", self.STATUS_CHANNEL_ID, e)
             return
 
         try:
@@ -143,10 +144,11 @@ class Matchmaking(commands.Cog):
                 try:
                     msg = await channel.fetch_message(last_msg_id)
                     await msg.delete()
+                    logger.info("Deleted old status message %s", last_msg_id)
                 except discord.NotFound:
                     pass  # Already deleted
-                except Exception:
-                    pass  # Ignore permission errors etc.
+                except Exception as e:
+                    logger.warning("Could not delete old status message: %s", e)
         except Exception:
             pass
 
@@ -154,6 +156,7 @@ class Matchmaking(commands.Cog):
         new_msg = await channel.send(embed=embed)
         self.storage.data["last_status_message_id"] = new_msg.id
         self.storage._save_data()
+        logger.info("Posted new status message %s", new_msg.id)
 
     # ------------------------------------------------------------------
     # /matchmaking command
@@ -259,6 +262,9 @@ class Matchmaking(commands.Cog):
 
     # ------------------------------------------------------------------
     # /matchmaking reset  (admin only)
+    # ------------------------------------------------------------------
+
+    @app_commands.command(name="matchmaking_reset", description="Clear all queues and matches (Admin only).")
     @app_commands.checks.has_permissions(administrator=True)
     async def matchmaking_reset(self, interaction: discord.Interaction):
         self.storage.reset_all()
@@ -335,7 +341,7 @@ class Matchmaking(commands.Cog):
                 await interaction.response.send_message(
                     f"🕰️ {interaction.user.mention} has joined the queue with system **{system}** ({points} pts). Waiting for an opponent…"
                 )
-            await self._post_status_update()
+        await self._post_status_update()
 
     async def _handle_status(self, interaction: discord.Interaction):
         embed = discord.Embed(
@@ -433,7 +439,7 @@ class Matchmaking(commands.Cog):
                     await interaction.response.send_message(
                         f"👋 {interaction.user.mention} has been removed from their confirmed match."
                     )
-            await self._post_status_update()
+        await self._post_status_update()
 
     # ------------------------------------------------------------------
     # Cancel challenge handler
