@@ -45,7 +45,8 @@ class Matchmaking(commands.Cog):
         action="Action to perform",
         system="Your system choice (required for Join/Rival)",
         points="Your points value (required for Join/Rival)",
-        opponent="The member you want to challenge (required for Rival)"
+        opponent="The member you want to challenge (required for Rival)",
+        leave_target="What to leave (required when action is Leave)"
     )
     @app_commands.choices(
         action=[
@@ -64,6 +65,10 @@ class Matchmaking(commands.Cog):
             app_commands.Choice(name="2000", value="2000"),
             app_commands.Choice(name="3000+", value="3000+"),
         ],
+        leave_target=[
+            app_commands.Choice(name="Queue", value="queue"),
+            app_commands.Choice(name="Match", value="match"),
+        ],
     )
     async def matchmaking(
         self,
@@ -72,6 +77,7 @@ class Matchmaking(commands.Cog):
         system: app_commands.Choice[str] | None = None,
         points: app_commands.Choice[str] | None = None,
         opponent: discord.Member | None = None,
+        leave_target: app_commands.Choice[str] | None = None,
     ):
         if action == "join":
             await self._handle_join(interaction, system, points)
@@ -80,7 +86,7 @@ class Matchmaking(commands.Cog):
         elif action == "show":
             await self._handle_show(interaction)
         elif action == "leave":
-            await self._handle_leave(interaction)
+            await self._handle_leave(interaction, leave_target)
 
     # ------------------------------------------------------------------
     # /matchmaking reset  (admin only)
@@ -192,27 +198,44 @@ class Matchmaking(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    async def _handle_leave(self, interaction: discord.Interaction):
+    async def _handle_leave(
+        self,
+        interaction: discord.Interaction,
+        leave_target: app_commands.Choice[str] | None,
+    ):
         user_id = interaction.user.id
 
+        if leave_target is None:
+            await interaction.response.send_message(
+                "⚠️ You must specify **Queue** or **Match** when leaving.", ephemeral=True
+            )
+            return
+
+        target = leave_target.value
+
         async with self._queue_lock:
-            if self.storage.is_in_match(user_id):
+            if target == "queue":
+                if not self.storage.is_in_queue(user_id):
+                    await interaction.response.send_message(
+                        "⚠️ You are not in the matchmaking queue.", ephemeral=True
+                    )
+                    return
+                self.storage.remove_from_queue(user_id)
                 await interaction.response.send_message(
-                    "❌ You are already in a confirmed match. You cannot leave.", ephemeral=True
+                    "👋 You have been removed from the matchmaking queue.", ephemeral=True
                 )
-                return
 
-            if not self.storage.is_in_queue(user_id):
+            elif target == "match":
+                match_entry = self.storage.find_match_for_user(user_id)
+                if match_entry is None:
+                    await interaction.response.send_message(
+                        "⚠️ You are not in any confirmed match.", ephemeral=True
+                    )
+                    return
+                self.storage.remove_match(match_entry)
                 await interaction.response.send_message(
-                    "⚠️ You are not in the matchmaking queue.", ephemeral=True
+                    "👋 You have been removed from your confirmed match.", ephemeral=True
                 )
-                return
-
-            self.storage.remove_from_queue(user_id)
-
-        await interaction.response.send_message(
-            "👋 You have been removed from the matchmaking queue.", ephemeral=True
-        )
 
     # ------------------------------------------------------------------
     # Rival challenge handler

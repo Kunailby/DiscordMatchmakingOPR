@@ -119,12 +119,30 @@ class MatchmakingStorage:
 
     def is_in_match(self, user_id: int) -> bool:
         """Check if a user is already in a confirmed match."""
+        return self.find_match_for_user(user_id) is not None
+
+    def find_match_for_user(self, user_id: int) -> dict[str, Any] | None:
+        """Find the match entry containing a given user. Returns the match dict or None."""
         for m in self.matches:
             p1 = m.get("player1", {})
             p2 = m.get("player2", {})
             if p1.get("user_id") == user_id or p2.get("user_id") == user_id:
-                return True
-        return False
+                return m
+        return None
+
+    def remove_match(self, match_entry: dict[str, Any]) -> None:
+        """Remove a specific match entry from the matches list."""
+        # Identify the match by both players' user_ids
+        p1_id = match_entry.get("player1", {}).get("user_id")
+        p2_id = match_entry.get("player2", {}).get("user_id")
+
+        def _matches(m: dict) -> bool:
+            m1 = m.get("player1", {}).get("user_id")
+            m2 = m.get("player2", {}).get("user_id")
+            return m1 == p1_id and m2 == p2_id
+
+        self.data["matches"] = [m for m in self.matches if not _matches(m)]
+        self._save_data()
 
     def reset_all(self) -> None:
         """Clear all queues and matches."""
