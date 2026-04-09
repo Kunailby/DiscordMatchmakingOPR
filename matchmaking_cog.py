@@ -72,12 +72,86 @@ class RivalChallengeView(View):
 class Matchmaking(commands.Cog):
     """Cog handling matchmaking slash commands."""
 
+    STATUS_CHANNEL_ID = 1491917353313763389
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.storage = MatchmakingStorage()
         self._queue_lock = asyncio.Lock()
         self._active_challenges: dict[int, RivalChallenge] = {}
         self.auto_reset.start()
+
+    # ------------------------------------------------------------------
+    # Auto-post status message
+    # ------------------------------------------------------------------
+
+    def _build_status_embed(self) -> discord.Embed:
+        """Build the status embed (same format as /status)."""
+        embed = discord.Embed(
+            title="📋 Live Matchmaking Status",
+            colour=discord.Colour.blurple(),
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        if self.storage.matches:
+            match_lines = []
+            for m in self.storage.matches:
+                p1 = m["player1"]["username"]
+                p2 = m["player2"]["username"]
+                s1 = m["player1"]["system"]
+                s2 = m["player2"]["system"]
+                pt1 = m["player1"].get("points", "?")
+                pt2 = m["player2"].get("points", "?")
+                match_lines.append(f"⚔️ **{p1}** ({s1}, {pt1} pts) vs **{p2}** ({s2}, {pt2} pts)")
+            embed.add_field(name="Active Matches", value="\n".join(match_lines), inline=False)
+        else:
+            embed.add_field(name="Active Matches", value="No active matches.", inline=False)
+
+        if self.storage.queue:
+            wait_lines = []
+            for p in self.storage.queue:
+                wait_lines.append(
+                    f"🕰️ **{p['username']}** ({p['system']}, {p.get('points', '?')} pts): WAITING OPPONENT"
+                )
+            embed.add_field(name="Waiting in Queue", value="\n".join(wait_lines), inline=False)
+        else:
+            embed.add_field(name="Waiting in Queue", value="No players waiting.", inline=False)
+
+        if self.storage.pending_challenges:
+            challenge_lines = []
+            for c in self.storage.pending_challenges:
+                challenge_lines.append(
+                    f"⚔️ **{c['challenger_name']}** waiting for **{c['target_name']}** to accept ({c['system']}, {c['points']} pts)"
+                )
+            embed.add_field(name="Pending Challenges", value="\n".join(challenge_lines), inline=False)
+
+        return embed
+
+    async def _post_status_update(self) -> None:
+        """Delete the old status message and post a new one in the status channel."""
+        try:
+            channel = self.bot.get_channel(self.STATUS_CHANNEL_ID)
+            if channel is None:
+                channel = await self.bot.fetch_channel(self.STATUS_CHANNEL_ID)
+        except Exception:
+            logger.warning("Could not find status channel %s", self.STATUS_CHANNEL_ID)
+            return
+
+        try:
+            last_msg_id = self.storage.data.get("last_status_message_id")
+            if last_msg_id:
+                try:
+                    msg = await channel.fetch_message(last_msg_id)
+                    await msg.delete()
+                except discord.NotFound:
+                    pass  # Already deleted
+                except Exception:
+                    pass  # Ignore permission errors etc.
+
+        embed = self._build_status_embed()
+        new_msg = await channel.send(embed=embed)
+        self.storage.data["last_status_message_id"] = new_msg.id
+        self.storage._save_data()
 
     # ------------------------------------------------------------------
     # /matchmaking command
@@ -179,12 +253,10 @@ class Matchmaking(commands.Cog):
                 await interaction.response.send_message(
                     f"🕰️ {interaction.user.mention} has joined the queue as **ANY** (any system, any points). Waiting for an opponent…"
                 )
+            await self._post_status_update()
 
     # ------------------------------------------------------------------
     # /matchmaking reset  (admin only)
-    # ------------------------------------------------------------------
-
-    @app_commands.command(name="matchmaking_reset", description="Clear all queues and matches (Admin only).")
     @app_commands.checks.has_permissions(administrator=True)
     async def matchmaking_reset(self, interaction: discord.Interaction):
         self.storage.reset_all()
@@ -193,6 +265,7 @@ class Matchmaking(commands.Cog):
             ephemeral=False,
         )
         logger.info("Matchmaking data reset by %s", interaction.user)
+        await self._post_status_update()
 
     # ------------------------------------------------------------------
     # Action handlers
@@ -260,6 +333,7 @@ class Matchmaking(commands.Cog):
                 await interaction.response.send_message(
                     f"🕰️ {interaction.user.mention} has joined the queue with system **{system}** ({points} pts). Waiting for an opponent…"
                 )
+            await self._post_status_update()
 
     async def _handle_status(self, interaction: discord.Interaction):
         embed = discord.Embed(
@@ -357,6 +431,7 @@ class Matchmaking(commands.Cog):
                     await interaction.response.send_message(
                         f"👋 {interaction.user.mention} has been removed from their confirmed match."
                     )
+            await self._post_status_update()
 
     # ------------------------------------------------------------------
     # Cancel challenge handler
@@ -403,6 +478,7 @@ class Matchmaking(commands.Cog):
         await interaction.response.send_message(
             f"🚫 Challenge to **{challenge['target_name']}** has been cancelled.", ephemeral=False
         )
+        await self._post_status_update()
 
     # ------------------------------------------------------------------
     # Rival challenge handler
@@ -510,6 +586,7 @@ class Matchmaking(commands.Cog):
         )
         msg = await interaction.original_response()
         self._active_challenges[msg.id] = challenge
+        await self._post_status_update()
 
     # ------------------------------------------------------------------
     # Rival button callback handlers
@@ -563,6 +640,8 @@ class Matchmaking(commands.Cog):
         except (discord.NotFound, Exception) as e:
             logger.warning("Could not DM challenger: %s", e)
 
+        await self._post_status_update()
+
     async def _handle_rival_decline(self, challenge: RivalChallenge, interaction: discord.Interaction):
         """Decline a rival challenge."""
         self.storage.remove_pending_challenge(challenge.target_id)
@@ -580,6 +659,8 @@ class Matchmaking(commands.Cog):
             logger.warning("Could not DM challenger (DMs closed)")
         except (discord.NotFound, Exception) as e:
             logger.warning("Could not DM challenger: %s", e)
+
+        await self._post_status_update()
 
     # ------------------------------------------------------------------
     # Scheduled auto-reset — second Friday of every month
@@ -604,6 +685,7 @@ class Matchmaking(commands.Cog):
             self.storage.reset_all()
             self.storage.data[last_reset_key] = now.strftime("%Y-%m-%d")
             self.storage._save_data()
+            await self._post_status_update()
 
             for guild in self.bot.guilds:
                 channel = guild.system_channel
