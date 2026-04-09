@@ -280,6 +280,21 @@ class Matchmaking(commands.Cog):
             view=view,
         )
 
+        # DM the challenged player
+        try:
+            dm_embed = discord.Embed(
+                title="⚔️ New Rival Challenge",
+                description=(
+                    f"**{challenge.challenger_name}** has challenged you to a match!\n\n"
+                    f"System: **{challenge.system}** • Points: **{challenge.points}**\n\n"
+                    f"Head to the channel and click **Accept** or **Decline**."
+                ),
+                colour=discord.Colour.orange(),
+            )
+            await opponent.send(embed=dm_embed)
+        except (discord.Forbidden, discord.NotFound):
+            pass
+
         # Store challenge by message id so button callbacks can find it
         msg = await interaction.original_response()
         self._active_challenges[msg.id] = challenge
@@ -399,10 +414,10 @@ class Matchmaking(commands.Cog):
 
 
 class RivalChallengeView(View):
-    """Interactive Accept/Decline buttons for a rival challenge."""
+    """Interactive Accept/Decline buttons for a rival challenge. Stays up indefinitely."""
 
     def __init__(self, challenge: RivalChallenge, cog: "Matchmaking"):
-        super().__init__(timeout=300)  # 5 minute timeout
+        super().__init__(timeout=None)  # no timeout — buttons persist until clicked
         self.challenge = challenge
         self.cog = cog
         self._responded = False
@@ -443,15 +458,6 @@ class RivalChallengeView(View):
             child.disabled = True
         await interaction.message.edit(view=self)
         await self.cog._handle_rival_decline(self.challenge, interaction)
-
-    async def on_timeout(self):
-        """Disable buttons when the challenge expires."""
-        for child in self.children:
-            child.disabled = True
-        try:
-            await self.message.edit(view=self)
-        except (discord.NotFound, discord.Forbidden):
-            pass
 
 
 async def setup(bot: commands.Bot) -> None:
