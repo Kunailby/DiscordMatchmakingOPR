@@ -71,12 +71,12 @@ class MatchmakingStorage:
     def matches(self) -> list[dict[str, Any]]:
         return self.data["matches"]
 
-    def add_to_queue(self, user_id: int, username: str, faction: str) -> None:
+    def add_to_queue(self, user_id: int, username: str, system: str) -> None:
         """Add a user to the matchmaking queue."""
         self.queue.append({
             "user_id": user_id,
             "username": username,
-            "faction": faction
+            "system": system
         })
         self._save_data()
 

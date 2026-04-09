@@ -29,7 +29,7 @@ class TestStorageInitialization:
     def test_loads_valid_json(self, tmp_json):
         """Load properly structured JSON."""
         data = {
-            "queue": [{"user_id": 1, "username": "Alice", "faction": "AOF"}],
+            "queue": [{"user_id": 1, "username": "Alice", "system": "AOF"}],
             "matches": [],
         }
         with open(tmp_json, "w") as f:
@@ -65,7 +65,7 @@ class TestQueueOperations:
     def test_add_to_queue(self, storage):
         storage.add_to_queue(1, "Alice", "AOF")
         assert len(storage.queue) == 1
-        assert storage.queue[0] == {"user_id": 1, "username": "Alice", "faction": "AOF"}
+        assert storage.queue[0] == {"user_id": 1, "username": "Alice", "system": "AOF"}
 
     def test_is_in_queue(self, storage):
         storage.add_to_queue(1, "Alice", "AOF")
@@ -102,8 +102,8 @@ class TestMatchOperations:
     """Test match recording and lookup."""
 
     def test_add_match(self, storage):
-        p1 = {"user_id": 1, "username": "Alice", "faction": "AOF"}
-        p2 = {"user_id": 2, "username": "Bob", "faction": "GDF"}
+        p1 = {"user_id": 1, "username": "Alice", "system": "AOF"}
+        p2 = {"user_id": 2, "username": "Bob", "system": "GDF"}
         storage.add_match(p1, p2)
 
         assert len(storage.matches) == 1
@@ -111,8 +111,8 @@ class TestMatchOperations:
         assert storage.matches[0]["player2"] == p2
 
     def test_is_in_match(self, storage):
-        p1 = {"user_id": 1, "username": "Alice", "faction": "AOF"}
-        p2 = {"user_id": 2, "username": "Bob", "faction": "GDF"}
+        p1 = {"user_id": 1, "username": "Alice", "system": "AOF"}
+        p2 = {"user_id": 2, "username": "Bob", "system": "GDF"}
         storage.add_match(p1, p2)
 
         assert storage.is_in_match(1) is True
@@ -137,8 +137,8 @@ class TestMatchOperations:
         assert storage.is_in_match(999) is False  # should not crash
 
     def test_match_persists_to_file(self, storage):
-        p1 = {"user_id": 1, "username": "Alice", "faction": "AOF"}
-        p2 = {"user_id": 2, "username": "Bob", "faction": "GDF"}
+        p1 = {"user_id": 1, "username": "Alice", "system": "AOF"}
+        p2 = {"user_id": 2, "username": "Bob", "system": "GDF"}
         storage.add_match(p1, p2)
 
         with open(storage.filepath, "r") as f:
@@ -152,8 +152,8 @@ class TestReset:
     def test_reset_clears_everything(self, storage):
         storage.add_to_queue(1, "Alice", "AOF")
         storage.add_to_queue(2, "Bob", "GDF")
-        p1 = {"user_id": 3, "username": "Carol", "faction": "AOF"}
-        p2 = {"user_id": 4, "username": "Dave", "faction": "GDF"}
+        p1 = {"user_id": 3, "username": "Carol", "system": "AOF"}
+        p2 = {"user_id": 4, "username": "Dave", "system": "GDF"}
         storage.add_match(p1, p2)
 
         storage.reset_all()
@@ -186,9 +186,9 @@ class TestEdgeCases:
 
     def test_multiple_matches_same_user(self, storage):
         """A user can technically appear in multiple matches (data-level)."""
-        p1 = {"user_id": 1, "username": "Alice", "faction": "AOF"}
-        p2 = {"user_id": 2, "username": "Bob", "faction": "GDF"}
-        p3 = {"user_id": 3, "username": "Carol", "faction": "AOF"}
+        p1 = {"user_id": 1, "username": "Alice", "system": "AOF"}
+        p2 = {"user_id": 2, "username": "Bob", "system": "GDF"}
+        p3 = {"user_id": 3, "username": "Carol", "system": "AOF"}
         storage.add_match(p1, p2)
         storage.add_match(p1, p3)
 

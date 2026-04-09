@@ -85,7 +85,7 @@ class TestAutoResetDedup:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         data = {
-            "queue": [{"user_id": 1, "username": "Test", "faction": "AOF"}],
+            "queue": [{"user_id": 1, "username": "Test", "system": "AOF"}],
             "matches": [],
             "last_auto_reset_date": today,
         }
@@ -104,7 +104,7 @@ class TestAutoResetDedup:
         today = "2026-01-02"
 
         data = {
-            "queue": [{"user_id": 1, "username": "Test", "faction": "AOF"}],
+            "queue": [{"user_id": 1, "username": "Test", "system": "AOF"}],
             "matches": [],
             "last_auto_reset_date": yesterday,
         }
@@ -134,7 +134,7 @@ class TestQueueAndMatchFlow:
 
         # Bob joins → simulate the cog popping Alice and creating a match
         opponent = storage.queue.pop(0)
-        storage.add_match(opponent, {"user_id": 2, "username": "Bob", "faction": "GDF"})
+        storage.add_match(opponent, {"user_id": 2, "username": "Bob", "system": "GDF"})
 
         assert len(storage.queue) == 0
         assert len(storage.matches) == 1
@@ -148,7 +148,7 @@ class TestQueueAndMatchFlow:
         """After being matched, user should no longer be in queue."""
         storage.add_to_queue(1, "Alice", "AOF")
         opponent = storage.queue.pop(0)
-        storage.add_match(opponent, {"user_id": 2, "username": "Bob", "faction": "GDF"})
+        storage.add_match(opponent, {"user_id": 2, "username": "Bob", "system": "GDF"})
 
         assert not storage.is_in_queue(1)
 
@@ -165,8 +165,8 @@ class TestQueueAndMatchFlow:
     def test_leave_while_matched_denied_by_logic(self, storage):
         """The storage layer doesn't prevent leaving a match — that's the cog's job.
         But is_in_match should return True so the cog can deny it."""
-        p1 = {"user_id": 1, "username": "Alice", "faction": "AOF"}
-        p2 = {"user_id": 2, "username": "Bob", "faction": "GDF"}
+        p1 = {"user_id": 1, "username": "Alice", "system": "AOF"}
+        p2 = {"user_id": 2, "username": "Bob", "system": "GDF"}
         storage.add_match(p1, p2)
 
         assert storage.is_in_match(1)
@@ -209,7 +209,7 @@ class TestConcurrencyGuard:
                     return
                 if storage.queue:
                     opponent = storage.queue.pop(0)
-                    storage.add_match(opponent, {"user_id": user_id, "username": f"User{user_id}", "faction": "GDF"})
+                    storage.add_match(opponent, {"user_id": user_id, "username": f"User{user_id}", "system": "GDF"})
                     results.append(f"user {user_id}: matched with {opponent['username']}")
                 else:
                     storage.add_to_queue(user_id, f"User{user_id}", "AOF")

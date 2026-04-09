@@ -31,7 +31,7 @@ class Matchmaking(commands.Cog):
     @app_commands.command(name="matchmaking", description="Join, show, or leave matchmaking.")
     @app_commands.describe(
         action="Action to perform",
-        faction="Your faction choice (required for Join)"
+        system="Your system choice (required for Join)"
     )
     @app_commands.choices(
         action=[
@@ -39,7 +39,7 @@ class Matchmaking(commands.Cog):
             app_commands.Choice(name="Show", value="show"),
             app_commands.Choice(name="Leave", value="leave"),
         ],
-        faction=[
+        system=[
             app_commands.Choice(name="AOF", value="AOF"),
             app_commands.Choice(name="GDF", value="GDF"),
         ],
@@ -48,10 +48,10 @@ class Matchmaking(commands.Cog):
         self,
         interaction: discord.Interaction,
         action: str,
-        faction: app_commands.Choice[str] | None = None,
+        system: app_commands.Choice[str] | None = None,
     ):
         if action == "join":
-            await self._handle_join(interaction, faction)
+            await self._handle_join(interaction, system)
         elif action == "show":
             await self._handle_show(interaction)
         elif action == "leave":
@@ -78,16 +78,16 @@ class Matchmaking(commands.Cog):
     async def _handle_join(
         self,
         interaction: discord.Interaction,
-        faction_choice: app_commands.Choice[str] | None,
+        system_choice: app_commands.Choice[str] | None,
     ):
-        if faction_choice is None:
+        if system_choice is None:
             await interaction.response.send_message(
-                "⚠️ You must specify a faction (`AOF` or `GDF`) when joining.",
+                "⚠️ You must specify a system (`AOF` or `GDF`) when joining.",
                 ephemeral=True,
             )
             return
 
-        faction = faction_choice.value
+        system = system_choice.value
         user_id = interaction.user.id
         username = interaction.user.display_name
 
@@ -110,7 +110,7 @@ class Matchmaking(commands.Cog):
                 opponent = self.storage.queue.pop(0)
                 self.storage.add_match(
                     opponent,
-                    {"user_id": user_id, "username": username, "faction": faction},
+                    {"user_id": user_id, "username": username, "system": system},
                 )
 
                 opponent_mention = f"<@{opponent['user_id']}>"
@@ -118,9 +118,9 @@ class Matchmaking(commands.Cog):
                     f"⚔️ **MATCH FOUND!** {opponent_mention} vs {interaction.user.mention}!"
                 )
             else:
-                self.storage.add_to_queue(user_id, username, faction)
+                self.storage.add_to_queue(user_id, username, system)
                 await interaction.response.send_message(
-                    f"🕰️ {interaction.user.mention} has joined the queue with faction **{faction}**. Waiting for an opponent…"
+                    f"🕰️ {interaction.user.mention} has joined the queue with system **{system}**. Waiting for an opponent…"
                 )
 
     async def _handle_show(self, interaction: discord.Interaction):
@@ -136,9 +136,9 @@ class Matchmaking(commands.Cog):
             for m in self.storage.matches:
                 p1 = m["player1"]["username"]
                 p2 = m["player2"]["username"]
-                f1 = m["player1"]["faction"]
-                f2 = m["player2"]["faction"]
-                match_lines.append(f"⚔️ **{p1}** ({f1}) vs **{p2}** ({f2})")
+                s1 = m["player1"]["system"]
+                s2 = m["player2"]["system"]
+                match_lines.append(f"⚔️ **{p1}** ({s1}) vs **{p2}** ({s2})")
             embed.add_field(name="Active Matches", value="\n".join(match_lines), inline=False)
         else:
             embed.add_field(name="Active Matches", value="No active matches.", inline=False)
@@ -147,7 +147,7 @@ class Matchmaking(commands.Cog):
         if self.storage.queue:
             wait_lines = []
             for p in self.storage.queue:
-                wait_lines.append(f"🕰️ **{p['username']}** ({p['faction']}): WAITING OPPONENT")
+                wait_lines.append(f"🕰️ **{p['username']}** ({p['system']}): WAITING OPPONENT")
             embed.add_field(name="Waiting in Queue", value="\n".join(wait_lines), inline=False)
         else:
             embed.add_field(name="Waiting in Queue", value="No players waiting.", inline=False)
