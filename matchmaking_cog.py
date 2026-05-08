@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord.ui import Button, View
 
 from storage import MatchmakingStorage
@@ -79,7 +79,6 @@ class Matchmaking(commands.Cog):
         self.storage = MatchmakingStorage()
         self._queue_lock = asyncio.Lock()
         self._active_challenges: dict[int, RivalChallenge] = {}
-        self.auto_reset.start()
 
     # ------------------------------------------------------------------
     # Auto-post status message
@@ -674,47 +673,6 @@ class Matchmaking(commands.Cog):
             logger.warning("Could not DM challenger: %s", e)
 
         await self._post_status_update()
-
-    # ------------------------------------------------------------------
-    # Scheduled auto-reset — second Friday of every month
-    # ------------------------------------------------------------------
-
-    @tasks.loop(hours=1)
-    async def auto_reset(self):
-        """Check hourly if today is the second Friday and reset if so."""
-        now = datetime.now(timezone.utc)
-        if now.weekday() != 4:  # Not Friday
-            return
-
-        week_number = (now.day - 1) // 7 + 1
-
-        if week_number == 2:
-            last_reset_key = "last_auto_reset_date"
-            last_reset = self.storage.data.get(last_reset_key)
-            if last_reset == now.strftime("%Y-%m-%d"):
-                return
-
-            logger.info("Auto-reset triggered: second Friday of the month.")
-            self.storage.reset_all()
-            self.storage.data[last_reset_key] = now.strftime("%Y-%m-%d")
-            self.storage._save_data()
-            await self._post_status_update()
-
-            for guild in self.bot.guilds:
-                channel = guild.system_channel
-                if channel and channel.permissions_for(guild.me).send_messages:
-                    try:
-                        await channel.send(
-                            "🧹 **SCHEDULED MAINTENANCE** — It's the second Friday of the month! "
-                            "All matchmaking queues and matches have been reset."
-                        )
-                    except discord.Forbidden:
-                        pass
-
-    @auto_reset.before_loop
-    async def before_auto_reset(self):
-        await self.bot.wait_until_ready()
-
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Matchmaking(bot))

@@ -10,8 +10,7 @@
 6. [Quitter une File d'Attente ou un Match](#quitter-une-file-dattente-ou-un-match)
 7. [Rejoindre pour N'importe quel Adversaire](#rejoindre-pour-nimporte-quel-adversaire)
 8. [Réinitialisation par l'Administrateur](#réinitialisation-par-ladministrateur)
-9. [Réinitialisation Mensuelle Automatique](#réinitialisation-mensuelle-automatique)
-10. [Questions Fréquemment Posées](#questions-fréquemment-posées)
+9. [Questions Fréquemment Posées](#questions-fréquemment-posées)
 
 ---
 
@@ -246,16 +245,6 @@ Les administrateurs du serveur peuvent manuellement **effacer toutes les files d
 
 **Réponse du bot :**
 > 🧹 **MATCHMAKING RESET** — All queues and matches have been cleared.
-
----
-
-## Réinitialisation Mensuelle Automatique
-
-Le bot **réinitialise automatiquement** toutes les données de matchmaking le **deuxième vendredi de chaque mois**. Cela garantit un nouveau départ pour les saisons compétitives.
-
-- La réinitialisation se produit **une fois par mois**.
-- Une notification est publiée dans le canal système du serveur (si disponible).
-- La date exacte est suivie en interne pour que la réinitialisation ne se déclenche qu'une seule fois, même si le bot redémarre.
 
 ---
 

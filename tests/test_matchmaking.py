@@ -1,106 +1,12 @@
-"""Tests for matchmaking business logic, rival challenges, and scheduled reset."""
+"""Tests for matchmaking business logic and rival challenges."""
 
 import asyncio
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from storage import MatchmakingStorage
-
-
-class TestSecondFridayDetection:
-    """Verify the second-Friday date calculation logic."""
-
-    def is_second_friday(self, dt: datetime) -> bool:
-        """Replicate the logic from the cog for testing."""
-        if dt.weekday() != 4:  # Not Friday
-            return False
-        week_number = (dt.day - 1) // 7 + 1
-        return week_number == 2
-
-    def test_second_friday_first_half(self):
-        """Second Friday falls on day 8-14."""
-        # April 2026: first Friday is April 3, second is April 10
-        dt = datetime(2026, 4, 10, tzinfo=timezone.utc)
-        assert dt.weekday() == 4
-        assert self.is_second_friday(dt) is True
-
-    def test_first_friday_not_matched(self):
-        dt = datetime(2026, 4, 3, tzinfo=timezone.utc)
-        assert dt.weekday() == 4
-        assert self.is_second_friday(dt) is False
-
-    def test_third_friday_not_matched(self):
-        dt = datetime(2026, 4, 17, tzinfo=timezone.utc)
-        assert dt.weekday() == 4
-        assert self.is_second_friday(dt) is False
-
-    def test_thursday_not_matched(self):
-        dt = datetime(2026, 4, 9, tzinfo=timezone.utc)
-        assert self.is_second_friday(dt) is False
-
-    def test_saturday_not_matched(self):
-        dt = datetime(2026, 4, 11, tzinfo=timezone.utc)
-        assert self.is_second_friday(dt) is False
-
-    def test_various_months_second_friday(self):
-        """Check known second Fridays across months."""
-        cases = [
-            (2026, 1, 9), (2026, 2, 13), (2026, 3, 13),
-            (2026, 4, 10), (2026, 5, 8), (2026, 12, 11),
-        ]
-        for year, month, expected_day in cases:
-            dt = datetime(year, month, expected_day, tzinfo=timezone.utc)
-            assert dt.weekday() == 4, f"{year}-{month:02d}-{expected_day:02d} is not a Friday"
-            assert self.is_second_friday(dt) is True, f"Failed for {year}-{month}"
-
-    def test_day_before_and_after_second_friday(self):
-        # April 2026: second Friday = 10th
-        dt_before = datetime(2026, 4, 9, tzinfo=timezone.utc)   # Thursday
-        dt_after = datetime(2026, 4, 11, tzinfo=timezone.utc)   # Saturday
-        assert self.is_second_friday(dt_before) is False
-        assert self.is_second_friday(dt_after) is False
-
-
-class TestAutoResetDedup:
-    """Verify the same-day reset prevention."""
-
-    def test_dedup_prevents_double_reset(self, tmp_path):
-        json_file = tmp_path / "test.json"
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        data = {
-            "queue": [{"user_id": 1, "username": "Test", "system": "AOF", "points": "1000"}],
-            "matches": [],
-            "last_auto_reset_date": today,
-        }
-        with open(json_file, "w") as f:
-            import json
-            json.dump(data, f)
-
-        storage = MatchmakingStorage(filepath=str(json_file))
-        assert storage.data.get("last_auto_reset_date") == today
-
-    def test_dedup_allows_reset_on_different_day(self, tmp_path):
-        json_file = tmp_path / "test.json"
-        yesterday = "2026-01-01"
-
-        data = {
-            "queue": [{"user_id": 1, "username": "Test", "system": "AOF", "points": "1000"}],
-            "matches": [],
-            "last_auto_reset_date": yesterday,
-        }
-        with open(json_file, "w") as f:
-            import json
-            json.dump(data, f)
-
-        storage = MatchmakingStorage(filepath=str(json_file))
-        assert storage.data.get("last_auto_reset_date") == yesterday
-
 
 class TestQueueAndMatchFlow:
     """Integration-style tests simulating the full matchmaking flow with points."""

@@ -10,8 +10,7 @@
 6. [Leaving a Queue or Match](#leaving-a-queue-or-match)
 7. [Queueing for Any Opponent](#queueing-for-any-opponent)
 8. [Admin Reset](#admin-reset)
-9. [Automatic Monthly Reset](#automatic-monthly-reset)
-10. [Frequently Asked Questions](#frequently-asked-questions)
+9. [Frequently Asked Questions](#frequently-asked-questions)
 
 ---
 
@@ -246,16 +245,6 @@ Server administrators can manually **clear all queues and matches** at any time.
 
 **Bot response:**
 > 🧹 **MATCHMAKING RESET** — All queues and matches have been cleared.
-
----
-
-## Automatic Monthly Reset
-
-The bot **automatically resets** all matchmaking data on the **second Friday of every month**. This ensures a fresh start for competitive seasons.
-
-- The reset happens **once per month**.
-- A notification is posted in the server's system channel (if available).
-- The exact date is tracked internally so the reset only fires once, even if the bot restarts.
 
 ---
 

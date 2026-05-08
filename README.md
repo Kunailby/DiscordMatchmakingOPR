@@ -7,7 +7,6 @@ A Discord bot for the game **One Page Rules** that handles player matchmaking ba
 - **Slash Commands** via `discord.py` app_commands
 - **Faction-based matchmaking** (AOF / GDF)
 - **Persistent storage** using a local JSON file
-- **Automatic scheduled reset** on the second Thursday of every month
 - **Admin reset** command for manual clearing
 
 ## Commands
